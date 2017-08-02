@@ -7,54 +7,63 @@ import com.rewieer.http.Response;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.stream.Collectors;
 
 public class WebServer {
-
   class WebServerThread extends Thread {
+    private Request extractRequest(InputStream stream){
+      BufferedInputStream input = new BufferedInputStream(stream);
+      byte bytes[] = new byte[8];
+      int readed = 0;
+
+      StringBuilder stringBuilder = new StringBuilder();
+
+      try {
+        while (input.available() > 0) {
+          readed = input.read(bytes);
+          for (int i = 0; i < readed; i++) {
+            stringBuilder.append((char) bytes[i]);
+          }
+        }
+      } catch (IOException e){
+        e.printStackTrace();
+      }
+
+      return RequestFactory.buildFromString(stringBuilder.toString());
+    }
+
+    private void putResponse(Response response, OutputStream stream){
+      BufferedOutputStream output = new BufferedOutputStream(stream);
+      try {
+        output.write(response.toString().getBytes());
+        output.flush();
+      } catch (IOException e){
+        e.printStackTrace();
+      }
+    }
+
+    private String getFileContent(String path) throws IOException {
+      return Files.readAllLines(new File(path).toPath(), StandardCharsets.UTF_8).stream().map(Object::toString).collect(Collectors.joining(""));
+    }
+
     @Override
     public void run() {
       try {
         while(true){
           Socket socket = server.accept();
-          BufferedInputStream input = new BufferedInputStream(socket.getInputStream());
-          BufferedOutputStream output = new BufferedOutputStream(socket.getOutputStream());
-          byte bytes[] = new byte[8];
-
-          String rawRequest = "";
-
-          int readed = 0;
-          while(input.available() > 0){
-            readed = input.read(bytes);
-            for(int i = 0; i < readed; i++){
-              rawRequest += (char) bytes[i];
-            }
-          }
-
-          Request request = RequestFactory.buildFromString(rawRequest);
+          Request request = extractRequest(socket.getInputStream());
           String url = request.getUrl();
           if(request.getUrl().equals("/")){
-           url = "index";
+           url = "index.html";
           }
 
           Response response = new Response();
-          try {
-            BufferedInputStream fileInput = new BufferedInputStream(new FileInputStream(new File("web/" + url + ".html")));
-            String rawBody = "";
-            while(fileInput.available() > 0){
-              readed = fileInput.read(bytes);
-              for(int i = 0; i < readed; i++){
-                rawBody += (char) bytes[i];
-              }
-            }
+          String fileContent = getFileContent("web/" + url);
+          response.setBody(fileContent);
 
-            response.setBody(rawBody);
-          } catch (IOException e){
-            e.printStackTrace();
-          }
-
-          String rawResponse = response.toString();
-          output.write(rawResponse.getBytes());
-          output.flush();
+          putResponse(response, socket.getOutputStream());
           socket.close();
         }
       } catch (IOException e){
@@ -63,9 +72,9 @@ public class WebServer {
     }
   }
 
-  WebServerThread thread = new WebServerThread();
-  ServerSocket server;
-  int port;
+  private WebServerThread thread = new WebServerThread();
+  private ServerSocket server;
+  private int port;
 
   public WebServer(int port){
     this.port = port;
@@ -80,7 +89,4 @@ public class WebServer {
     }
   }
 
-  public void stop(){
-
-  }
 }
